@@ -1,0 +1,14 @@
+{
+  "name": "aman-live-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node scripts/aman-live-test.mjs smoke",
+    "load": "node scripts/aman-live-test.mjs load",
+    "test": "node tests/mock-run.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

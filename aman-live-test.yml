@@ -1,0 +1,60 @@
+name: AMAN RC4.2 Live Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Test mode
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - load
+      load_steps:
+        description: Comma-separated concurrency steps, maximum 1000
+        required: false
+        default: 25,50,100,200,500,1000
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aman-live-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AMAN_BASE_URL: https://amaniq1.netlify.app
+      AMAN_OWNER_EMAIL: ${{ secrets.AMAN_OWNER_EMAIL }}
+      AMAN_OWNER_PASSWORD: ${{ secrets.AMAN_OWNER_PASSWORD }}
+      AMAN_TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'smoke' }}
+      AMAN_LOAD_STEPS: ${{ github.event_name == 'workflow_dispatch' && inputs.load_steps || '25' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate test files
+        run: node --check scripts/aman-live-test.mjs
+
+      - name: Run AMAN test
+        run: node scripts/aman-live-test.mjs "$AMAN_TEST_MODE"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aman-live-test-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
