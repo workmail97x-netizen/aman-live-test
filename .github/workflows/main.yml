@@ -14,7 +14,7 @@ on:
           - smoke
           - load
       load_steps:
-        description: Comma-separated concurrency steps
+        description: Comma-separated concurrency steps, maximum 1000
         required: false
         default: 25,50,100,200,500,1000
 
@@ -33,9 +33,8 @@ jobs:
       AMAN_BASE_URL: https://amaniq1.netlify.app
       AMAN_OWNER_EMAIL: ${{ secrets.AMAN_OWNER_EMAIL }}
       AMAN_OWNER_PASSWORD: ${{ secrets.AMAN_OWNER_PASSWORD }}
-     AMAN_TEST_MODE: load
-AMAN_LOAD_STEPS: 25,50,100,200,500,1000ps || '25' }}
-
+      AMAN_TEST_MODE: load
+      AMAN_LOAD_STEPS: 25,50,100,200,500,1000
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,7 +44,7 @@ AMAN_LOAD_STEPS: 25,50,100,200,500,1000ps || '25' }}
         with:
           node-version: '22'
 
-      - name: Validate test file
+      - name: Validate test files
         run: node --check aman-live-test.mjs
 
       - name: Run AMAN test
