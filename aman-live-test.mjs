@@ -51,7 +51,7 @@ async function writeReports(error=null){
   await fs.mkdir('artifacts',{recursive:true})
   await fs.writeFile('artifacts/aman-live-test-results.json',JSON.stringify(results,null,2))
   const lines=[
-    '# AMAN RC4.2 live test',
+    '# AMAN RC4.3 live test',
     '',
     `- Run: ${results.run_id}`,
     `- Mode: ${results.mode}`,
@@ -82,7 +82,7 @@ async function bootstrap(){
   if(!OWNER_EMAIL||!OWNER_PASSWORD)throw new Error('AMAN_OWNER_EMAIL and AMAN_OWNER_PASSWORD secrets are required')
   const index=await request(`${BASE_URL}/?qa=${RUN_ID}`)
   check('Netlify reachable',index.ok,{status:index.status})
-  check('RC4.2 frontend published',/1\.0\.0-rc4\.2/i.test(String(index.body?.raw||''))||/1\.0\.0-rc4\.2/i.test(await (await fetch(`${BASE_URL}/`)).text()),{status:index.status})
+  check('RC4.3 frontend published',/1\.0\.0-rc4\.3/i.test(String(index.body?.raw||''))||/1\.0\.0-rc4\.3/i.test(await (await fetch(`${BASE_URL}/`)).text()),{status:index.status})
   const configResponse=await fetch(`${BASE_URL}/config.js?qa=${RUN_ID}`,{signal:AbortSignal.timeout(20000)})
   const configText=await configResponse.text()
   const supabaseUrl=configText.match(/supabaseUrl:\s*['\"]([^'\"]+)/)?.[1]
