@@ -2,13 +2,14 @@ import fs from 'node:fs/promises'
 import process from 'node:process'
 import {pathToFileURL} from 'node:url'
 
-const MODE=(process.argv[2]||process.env.AMAN_TEST_MODE||'smoke').toLowerCase()
+const LEVEL=(process.argv[2]||process.env.AMAN_TEST_LEVEL||'quick').toLowerCase()
+const LOAD_STEPS_BY_LEVEL={standard:'25,50,100,200',full:'25,50,100,200,500,1000'}
 const BASE_URL=String(process.env.AMAN_BASE_URL||'https://amaniq1.netlify.app').replace(/\/+$/,'')
 const OWNER_EMAIL=String(process.env.AMAN_OWNER_EMAIL||'').trim()
 const OWNER_PASSWORD=String(process.env.AMAN_OWNER_PASSWORD||'')
 const RUN_ID=new Date().toISOString().replace(/\D/g,'').slice(2,14)
 const startedAt=new Date().toISOString()
-const results={run_id:RUN_ID,mode:MODE,base_url:BASE_URL,started_at:startedAt,checks:[],phases:[],created_test_tenants:[],warnings:[]}
+const results={run_id:RUN_ID,mode:LEVEL,base_url:BASE_URL,started_at:startedAt,checks:[],phases:[],created_test_tenants:[],warnings:[]}
 
 function check(name,passed,details={}){
   results.checks.push({name,passed:Boolean(passed),details})
@@ -51,10 +52,11 @@ async function writeReports(error=null){
   await fs.mkdir('artifacts',{recursive:true})
   await fs.writeFile('artifacts/aman-live-test-results.json',JSON.stringify(results,null,2))
   const lines=[
-    '# AMAN RC4.3 live test',
+    '# AMAN permanent live test',
     '',
     `- Run: ${results.run_id}`,
     `- Mode: ${results.mode}`,
+    `- Detected version: ${results.detected_version||'unknown'}`,
     `- Started: ${results.started_at}`,
     `- Finished: ${results.finished_at}`,
     `- Result: ${results.passed?'PASS':'FAIL'}`,
@@ -82,7 +84,10 @@ async function bootstrap(){
   if(!OWNER_EMAIL||!OWNER_PASSWORD)throw new Error('AMAN_OWNER_EMAIL and AMAN_OWNER_PASSWORD secrets are required')
   const index=await request(`${BASE_URL}/?qa=${RUN_ID}`)
   check('Netlify reachable',index.ok,{status:index.status})
-  check('RC4.3 frontend published',/1\.0\.0-rc4\.3/i.test(String(index.body?.raw||''))||/1\.0\.0-rc4\.3/i.test(await (await fetch(`${BASE_URL}/`)).text()),{status:index.status})
+  const indexHtml=await (await fetch(`${BASE_URL}/?version=${RUN_ID}`,{signal:AbortSignal.timeout(20000)})).text()
+  const detectedVersion=indexHtml.match(/1\.0\.0-rc[0-9]+(?:\.[0-9]+)?(?:-[a-z0-9.-]+)?/i)?.[0]||null
+  results.detected_version=detectedVersion
+  check('AMAN frontend version detected',Boolean(detectedVersion),{status:index.status,detected_version:detectedVersion})
   const configResponse=await fetch(`${BASE_URL}/config.js?qa=${RUN_ID}`,{signal:AbortSignal.timeout(20000)})
   const configText=await configResponse.text()
   const supabaseUrl=configText.match(/supabaseUrl:\s*['\"]([^'\"]+)/)?.[1]
@@ -138,11 +143,20 @@ async function smoke(){
   const ownerPhase=await timedBurst('smoke-owner-snapshot',25,()=>platform({action:'snapshot'}))
   check('Smoke authenticated requests healthy',ownerPhase.failed===0,ownerPhase)
 }
+async function quick(){
+  const tenants=await latestTestTenants()
+  const tenant=tenants[0]
+  check('Existing test tenant available for quick test',Boolean(tenant?.login_code),{test_tenants:tenants.length})
+  const publicPhase=await timedBurst('quick-public-branding',25,()=>branding(tenant.login_code))
+  check('Quick public requests healthy',publicPhase.failed===0,publicPhase)
+  const ownerPhase=await timedBurst('quick-owner-snapshot',25,()=>platform({action:'snapshot'}))
+  check('Quick authenticated requests healthy',ownerPhase.failed===0,ownerPhase)
+}
 async function load(){
   const tenants=await latestTestTenants()
   const tenant=tenants[0]
   check('Existing test tenant available for load',Boolean(tenant?.login_code),{test_tenants:tenants.length})
-  const requested=String(process.env.AMAN_LOAD_STEPS||'25,50,100,200,500,1000').split(',').map(Number).filter(x=>Number.isInteger(x)&&x>0&&x<=1000)
+  const requested=String(LOAD_STEPS_BY_LEVEL[LEVEL]||LOAD_STEPS_BY_LEVEL.standard).split(',').map(Number).filter(x=>Number.isInteger(x)&&x>0&&x<=1000)
   for(const size of requested){
     const publicPhase=await timedBurst(`public-branding-${size}`,size,()=>branding(tenant.login_code))
     const ownerPhase=await timedBurst(`owner-snapshot-${size}`,size,()=>platform({action:'snapshot'}))
@@ -157,9 +171,11 @@ async function load(){
 
 export async function main(){
   try{
-    if(!['smoke','load'].includes(MODE))throw new Error(`Unsupported mode: ${MODE}`)
+    if(!['quick','standard','full','setup'].includes(LEVEL))throw new Error(`Unsupported test level: ${LEVEL}`)
     await bootstrap()
-    if(MODE==='smoke')await smoke();else await load()
+    if(LEVEL==='quick')await quick()
+    else if(LEVEL==='setup')await smoke()
+    else await load()
     await writeReports()
     if(!results.passed)process.exitCode=1
   }catch(error){
